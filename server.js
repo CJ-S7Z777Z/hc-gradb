@@ -1,19 +1,22 @@
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const QRCode = require('qrcode');
-require('dotenv').config();
+const dotenv = require('dotenv');
+
+dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 5000;
 
 // Middleware для обработки JSON
 app.use(bodyParser.json());
 
 // Логирование всех запросов
 app.use((req, res, next) => {
-    console.log(`Получен запрос: ${req.method} ${req.url}`);
-    console.log('Заголовки:', req.headers);
+    console.log(`\nПолучен запрос: ${req.method} ${req.url}`);
+    console.log('Заголовки:', JSON.stringify(req.headers, null, 2));
     console.log('Тело запроса:', JSON.stringify(req.body, null, 2));
     next();
 });
@@ -21,7 +24,8 @@ app.use((req, res, next) => {
 // Проверка API ключа
 const authenticate = (req, res, next) => {
     const apiKey = req.headers['x-api-key'];
-    if (apiKey && apiKey === process.env.API_KEY.trim()) {
+    const trimmedApiKey = process.env.API_KEY.trim();
+    if (apiKey && apiKey === trimmedApiKey) {
         next();
     } else {
         console.log('Несовпадение API ключа');
@@ -85,7 +89,7 @@ app.post('/webhook', authenticate, async (req, res) => {
                 Имя: ${metadata.name} ${metadata.surname}
                 День: ${metadata.day}
                 Время: ${metadata.time}
-                Тип билета: ${metadata.ticketType}
+                Тип билета: ${metadata.ticketType === 'regular' ? 'Билет на каток' : 'Льготный'}
                 Количество: ${metadata.quantity}
                 Цена: ${amount} руб.
             `;
@@ -136,6 +140,26 @@ app.post('/webhook', authenticate, async (req, res) => {
         console.error('Ошибка при обработке webhook:', error);
         res.status(500).send({ message: 'Internal Server Error' });
     }
+});
+
+// Обработчик корневого пути для предотвращения ошибок 499
+app.get('/', (req, res) => {
+    res.send('Сервер работает.');
+});
+
+// Обработка неопределенных маршрутов
+app.use((req, res) => {
+    res.status(404).send({ message: 'Not Found' });
+});
+
+// Обработка непредвиденных исключений
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception thrown:', err);
+    process.exit(1); // Завершение процесса
 });
 
 // Запуск сервера
