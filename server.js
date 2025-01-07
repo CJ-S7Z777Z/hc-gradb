@@ -24,7 +24,7 @@ app.use((req, res, next) => {
 // Проверка API ключа
 const authenticate = (req, res, next) => {
     const apiKey = req.headers['x-api-key'];
-    const trimmedApiKey = process.env.API_KEY.trim();
+    const trimmedApiKey = process.env.API_KEY ? process.env.API_KEY.trim() : '';
     if (apiKey && apiKey === trimmedApiKey) {
         next();
     } else {
@@ -35,12 +35,12 @@ const authenticate = (req, res, next) => {
 
 // Настройка почтового транспортера
 const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST.trim(),
-    port: parseInt(process.env.SMTP_PORT, 10),
+    host: process.env.SMTP_HOST ? process.env.SMTP_HOST.trim() : '',
+    port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
     secure: process.env.SMTP_PORT.trim() === '465', // true для 465 порта, false для других
     auth: {
-        user: process.env.SMTP_USER.trim(),
-        pass: process.env.SMTP_PASS.trim()
+        user: process.env.SMTP_USER ? process.env.SMTP_USER.trim() : '',
+        pass: process.env.SMTP_PASS ? process.env.SMTP_PASS.trim() : ''
     }
 });
 
