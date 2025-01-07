@@ -43,15 +43,21 @@ app.post('/webhook', authenticate, async (req, res) => {
         const receipt = payment.receipt; // Информация о чеке
         const email = payment.metadata.email; // Предполагается, что email передается в metadata
 
+        // Проверка наличия необходимых данных
+        if (!payment.metadata) {
+            console.error('Metadata отсутствует в платежных данных.');
+            return res.status(400).send({ message: 'Metadata missing' });
+        }
+
         // Генерация QR-кода с информацией о билете
-        const qrData = `
-            Имя: ${payment.metadata.name} ${payment.metadata.surname}
+        const qrData = 
+            `Имя: ${payment.metadata.name} ${payment.metadata.surname}
             День: ${payment.metadata.day}
             Время: ${payment.metadata.time}
             Тип билета: ${payment.metadata.ticketType}
             Количество: ${payment.metadata.quantity}
-            Цена: ${amount} руб.
-        `;
+            Цена: ${amount} руб.`
+        ;
         let qrCodeImage;
         try {
             qrCodeImage = await QRCode.toDataURL(qrData);
