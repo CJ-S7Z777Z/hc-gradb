@@ -8,6 +8,7 @@ const dotenv = require('dotenv');
 dotenv.config();
 
 const app = express();
+// Используйте процесс.env.PORT, установленный Railway
 const port = process.env.PORT || 5000;
 
 // Middleware для обработки JSON
@@ -33,25 +34,33 @@ const authenticate = (req, res, next) => {
     }
 };
 
-// Настройка почтового транспортера
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST ? process.env.SMTP_HOST.trim() : '',
-    port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
-    secure: process.env.SMTP_PORT.trim() === '465', // true для 465 порта, false для других
-    auth: {
-        user: process.env.SMTP_USER ? process.env.SMTP_USER.trim() : '',
-        pass: process.env.SMTP_PASS ? process.env.SMTP_PASS.trim() : ''
-    }
-});
+// Настройка почтового транспортера с обработкой ошибок
+let transporter;
+try {
+    transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST ? process.env.SMTP_HOST.trim() : '',
+        port: process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587,
+        secure: process.env.SMTP_PORT === '465', // true для 465 порта, false для других
+        auth: {
+            user: process.env.SMTP_USER ? process.env.SMTP_USER.trim() : '',
+            pass: process.env.SMTP_PASS ? process.env.SMTP_PASS.trim() : ''
+        },
+        tls: {
+            rejectUnauthorized: false
+        }
+    });
 
-// Проверка соединения с почтовым сервером
-transporter.verify(function(error, success) {
-    if (error) {
-        console.error('Ошибка почтового транспортера:', error);
-    } else {
-        console.log('Почтовый транспортер готов к отправке писем');
-    }
-});
+    // Проверка соединения с почтовым сервером
+    transporter.verify(function(error, success) {
+        if (error) {
+            console.error('Ошибка почтового транспортера:', error);
+        } else {
+            console.log('Почтовый транспортер готов к отправке писем');
+        }
+    });
+} catch (error) {
+    console.error('Ошибка при настройке почтового транспортера:', error);
+}
 
 // Обработка webhook от YooKassa
 app.post('/webhook', authenticate, async (req, res) => {
@@ -159,7 +168,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception thrown:', err);
-    process.exit(1); // Завершение процесса
+    process.exit(1); // Завершение процесса в случае непойманной ошибки
 });
 
 // Запуск сервера
