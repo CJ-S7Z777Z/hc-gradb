@@ -3,6 +3,7 @@ const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const QRCode = require('qrcode');
 require('dotenv').config();
+const crypto = require('crypto');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -10,21 +11,11 @@ const port = process.env.PORT || 3000;
 // Middleware для обработки JSON
 app.use(bodyParser.json());
 
-// Проверка API ключа
-const authenticate = (req, res, next) => {
-    const apiKey = req.headers['x-api-key'];
-    if (apiKey && apiKey === process.env.API_KEY) {
-        next();
-    } else {
-        res.status(403).send({ message: 'Forbidden' });
-    }
-};
-
 // Настройка почтового транспортера
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT),
-    secure: process.env.SMTP_PORT === '465', // true для 465, false для других портов
+    secure: process.env.SMTP_PORT === '465', // true для 465 порта, false для других
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
@@ -35,8 +26,27 @@ const transporter = nodemailer.createTransport({
     }
 });
 
+// Функция для верификации подписи вебхука (если YooKassa поддерживает)
+const verifyYooKassaSignature = (req) => {
+    const signature = req.headers['x-api-signature-sha256'];
+    const secret = process.env.YKASSA_SECRET_KEY;
+    const hmac = crypto.createHmac('sha256', secret);
+    const body = JSON.stringify(req.body);
+    hmac.update(body);
+    const digest = hmac.digest('hex');
+    return digest === signature;
+};
+
 // Обработка webhook от YooKassa
-app.post('/webhook', authenticate, async (req, res) => {
+app.post('/webhook', async (req, res) => {
+    // Верификация подписи вебхука
+    if (process.env.YKASSA_SECRET_KEY) { // Проверьте, задан ли секретный ключ
+        if (!verifyYooKassaSignature(req)) {
+            console.warn('Не удалось верифицировать вебхук от YooKassa.');
+            return res.status(400).send('Invalid signature');
+        }
+    }
+
     const event = req.body;
 
     // Проверка события: обрабатываем только успешные платежи
@@ -52,7 +62,7 @@ app.post('/webhook', authenticate, async (req, res) => {
         }
 
         // Генерация QR-кода с информацией о билете
-        const qrData =`
+        const qrData = `
             Имя: ${payment.metadata.name} ${payment.metadata.surname}
             День: ${payment.metadata.day}
             Время: ${payment.metadata.time}
@@ -71,7 +81,7 @@ app.post('/webhook', authenticate, async (req, res) => {
 
         // Отправка письма пользователю
         const mailOptions = {
-            from: `"Ваше Название" <${process.env.SMTP_USER}>`,
+            from: `Ваше Название <${process.env.SMTP_USER}>`,
             to: email,
             subject: 'Ваши билеты на каток',
             html: `
