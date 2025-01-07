@@ -1,3 +1,4 @@
+
 import os
 import json
 import hmac
@@ -5,15 +6,20 @@ import hashlib
 import qrcode
 import io
 import secrets
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, abort
 from yookassa import Configuration, Payment
 from flask_mail import Mail, Message
 from dotenv import load_dotenv
+from flask_cors import CORS
+from functools import wraps
 
 # Загрузка переменных окружения из .env файла
 load_dotenv()
 
 app = Flask(__name__)
+
+# Настройка CORS
+CORS(app, resources={r"/create-payment": {"origins": "https://your-frontend-domain.com"}})  # Замените на домен вашего фронтенда
 
 # Конфигурация ЮKassa
 Configuration.account_id = os.getenv('SHOP_ID')
@@ -52,6 +58,16 @@ def generate_qr_code(data):
     img.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer.read()
+
+# Декоратор для проверки API ключа
+def require_api_key(func):
+    @wraps(func)
+    def decorated(*args, **kwargs):
+        provided_key = request.headers.get('Authorization')
+        if not provided_key or provided_key != f"Bearer {API_KEY}":
+            return jsonify({'error': 'Unauthorized'}), 401
+        return func(*args, **kwargs)
+    return decorated
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -110,6 +126,91 @@ def webhook():
             print(f'Ошибка при отправке письма: {e}')
 
     return 'OK', 200
+
+@app.route('/create-payment', methods=['POST', 'OPTIONS'])
+@require_api_key
+def create_payment():
+    if request.method == 'OPTIONS':
+        # Предварительный запрос CORS, ответим соответствующими заголовками
+        response = jsonify({'status': 'ok'})
+        response.headers.add("Access-Control-Allow-Origin", "https://your-frontend-domain.com")  # Замените на домен вашего фронтенда
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+        return response
+
+    data = request.get_json()
+    required_fields = ['name', 'surname', 'patronymic', 'phone', 'email', 'day', 'time', 'ticketType', 'quantity', 'totalPrice']
+    if not all(field in data for field in required_fields):
+        return jsonify({'error': 'Missing fields'}), 400
+
+    # Проверка количества доступных билетов
+    session_key = f"{data['day']}-{data['time']}"
+    if session_key not in current_tickets_sold:
+        current_tickets_sold[session_key] = 0
+
+    quantity = int(data['quantity'])
+    if current_tickets_sold[session_key] + quantity > MAX_TICKETS_PER_SESSION:
+        return jsonify({'error': 'К сожалению, на этот сеанс уже нет свободных билетов.'}), 400
+
+    current_tickets_sold[session_key] += quantity  # Увеличиваем количество проданных билетов
+
+    # Создание платежа через ЮKassa
+    try:
+        payment = Payment.create({
+            "amount": {
+                "value": data['totalPrice'],
+                "currency": "RUB"
+            },
+            "confirmation": {
+                "type": "redirect",
+                "return_url": "https://your-website.com/payment-success"  # Замените на вашу страницу успешной оплаты
+            },
+            "capture": True,
+            "description": f"Покупка билетов: {quantity} шт.",
+            "receipt": {
+                "customer": {
+                    "email": data['email']
+                },
+                "items": [
+                    {
+                        "description": f"Билет: {'На каток' if data['ticketType'] == 'regular' else 'Льготный'}\nДень: {data['day']}\nВремя: {data['time']}",
+                        "quantity": quantity,
+                        "amount": {
+                            "value": data['totalPrice'],
+                            "currency": "RUB"
+                        },
+                        "vat_code": "1",
+                        "payment_subject": "commodity",
+                        "payment_mode": "full_prepayment",
+                        "type": "payment_item"
+                    }
+                ]
+            },
+            "metadata": {
+                "name": data['name'],
+                "surname": data['surname'],
+                "patronymic": data['patronymic'],
+                "phone": data['phone'],
+                "email": data['email'],
+                "day": data['day'],
+                "time": data['time'],
+                "ticketType": data['ticketType'],
+                "quantity": data['quantity']
+            }
+        })
+
+        return jsonify({
+            'confirmation_url': payment.confirmation.confirmation_url
+        })
+    except Exception as e:
+        print(e)
+        return jsonify({'error': 'Ошибка при создании платежа'}), 500
+
+@app.route('/get-api-key', methods=['GET'])
+@require_api_key  # Это необходимо для защиты доступа к API ключу
+def get_api_key():
+    # Этот маршрут возвращает API ключ, но защищён авторизацией
+    return jsonify({'api_key': API_KEY})
 
 @app.route('/payment-success')
 def payment_success():
