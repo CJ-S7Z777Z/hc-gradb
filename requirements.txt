@@ -1,5 +1,0 @@
-﻿yookassa==3.4.1
-python-dotenv==1.0.0
-Flask-Mail==0.10.0
-qrcode==8.0
-Flask-Cors==5.0.0
