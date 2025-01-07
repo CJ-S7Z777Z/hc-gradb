@@ -1,3 +1,5 @@
+// server.js
+
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -28,7 +30,7 @@ const transporter = nodemailer.createTransport({
 
 // Маршрут для обработки вебхуков от ЮKассы
 app.post('/webhook', async (req, res) => {
-    console.log('Получен вебхук:', req.body);
+    console.log(Получен вебхук: ${JSON.stringify(req.body)});
 
     const signature = req.headers['x-api-signature-sha256'];
     const body = JSON.stringify(req.body);
@@ -39,7 +41,7 @@ app.post('/webhook', async (req, res) => {
     const digest = hmac.digest('hex');
 
     if (digest !== signature) {
-        console.warn('Не удалось верифицировать вебхук. Ожидалось:', digest, 'Получено:', signature);
+        console.warn(Не удалось верифицировать вебхук. Ожидалось: ${digest}, Получено: ${signature});
         return res.status(400).send('Invalid signature');
     }
 
@@ -102,7 +104,7 @@ app.post('/webhook', async (req, res) => {
         }
     } else {
         // Обработка других событий, если необходимо
-        console.log('Событие не требуется обработки:', event);
+        console.log(Событие не требуется обработки: ${event});
         res.status(200).send('Event ignored');
     }
 });
