@@ -19,7 +19,7 @@ load_dotenv()
 app = Flask(__name__)
 
 # Настройка CORS
-CORS(app, resources={r"/create-payment": {"origins": "https://your-frontend-domain.com"}})  # Замените на домен вашего фронтенда
+CORS(app, resources={r"/create-payment": {"origins": "https://hc-grad.ru/index.php/store"}})  # Замените на домен вашего фронтенда
 
 # Конфигурация ЮKassa
 Configuration.account_id = os.getenv('SHOP_ID')
@@ -133,7 +133,7 @@ def create_payment():
     if request.method == 'OPTIONS':
         # Предварительный запрос CORS, ответим соответствующими заголовками
         response = jsonify({'status': 'ok'})
-        response.headers.add("Access-Control-Allow-Origin", "https://your-frontend-domain.com")  # Замените на домен вашего фронтенда
+        response.headers.add("Access-Control-Allow-Origin", "https://hc-grad.ru/index.php/store")  # Замените на домен вашего фронтенда
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
         return response
@@ -163,7 +163,7 @@ def create_payment():
             },
             "confirmation": {
                 "type": "redirect",
-                "return_url": "https://your-website.com/payment-success"  # Замените на вашу страницу успешной оплаты
+                "return_url": "https://hc-grad.ru/index.php/"  # Замените на вашу страницу успешной оплаты
             },
             "capture": True,
             "description": f"Покупка билетов: {quantity} шт.",
