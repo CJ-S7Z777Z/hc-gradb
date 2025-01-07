@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Ваши билеты</title>
+</head>
+<body>
+    <p>Здравствуйте, {{ tickets.name }}!</p>
+    <p>Спасибо за покупку билетов.</p>
+    <p>Ваш QR-код прикреплён к этому письму.</p>
+    <p>Информация о билетах:</p>
+    <ul>
+        <li>День: {{ tickets.day }}</li>
+        <li>Время: {{ tickets.time }}</li>
+        <li>Тип билета: {{ 'На каток' if tickets.ticketType == 'regular' else 'Льготный' }}</li>
+        <li>Количество: {{ tickets.quantity }}</li>
+    </ul>
+    <p>Пожалуйста, сохраните этот QR-код для подтверждения при входе.</p>
+</body>
+</html>
