@@ -84,7 +84,7 @@ def create_payment():
             },
             "confirmation": {
                 "type": "redirect",
-                "return_url": "https://your-website.com/payment-success"  # Замените на вашу страницу успешной оплаты
+                "return_url": "https://hc-grad/"  # Замените на вашу страницу успешной оплаты
             },
             "capture": True,
             "description": f"Покупка билетов: {quantity} шт.",
