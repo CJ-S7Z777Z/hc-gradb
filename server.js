@@ -23,11 +23,15 @@ const authenticate = (req, res, next) => {
 // Настройка почтового транспортера
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT,
-    secure: false, // true для 465 порта, false для других
+    port: Number(process.env.SMTP_PORT),
+    secure: process.env.SMTP_PORT === '465', // true для 465, false для других портов
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
+    },
+    // Дополнительные настройки для улучшения надежности соединения
+    tls: {
+        rejectUnauthorized: false // Используйте с осторожностью
     }
 });
 
@@ -35,29 +39,28 @@ const transporter = nodemailer.createTransport({
 app.post('/webhook', authenticate, async (req, res) => {
     const event = req.body;
 
-    // Проверка события. Здесь предполагается, что вы хотите обрабатывать успешные оплаты
+    // Проверка события: обрабатываем только успешные платежи
     if (event.event && event.event === 'payment.succeeded') {
         const payment = event.object;
         const amount = payment.amount.value;
         const description = payment.description;
-        const receipt = payment.receipt; // Информация о чеке
-        const email = payment.metadata.email; // Предполагается, что email передается в metadata
+        const email = (payment.metadata && payment.metadata.email) || null; // Проверка наличия email
 
-        // Проверка наличия необходимых данных
-        if (!payment.metadata) {
-            console.error('Metadata отсутствует в платежных данных.');
-            return res.status(400).send({ message: 'Metadata missing' });
+        if (!email) {
+            console.error('Email отсутствует в metadata.');
+            return res.status(400).send({ message: 'Email missing in metadata' });
         }
 
         // Генерация QR-кода с информацией о билете
-        const qrData = 
-            `Имя: ${payment.metadata.name} ${payment.metadata.surname}
+        const qrData =`
+            Имя: ${payment.metadata.name} ${payment.metadata.surname}
             День: ${payment.metadata.day}
             Время: ${payment.metadata.time}
             Тип билета: ${payment.metadata.ticketType}
             Количество: ${payment.metadata.quantity}
-            Цена: ${amount} руб.`
-        ;
+            Цена: ${amount} руб.
+        `;
+
         let qrCodeImage;
         try {
             qrCodeImage = await QRCode.toDataURL(qrData);
@@ -101,7 +104,12 @@ app.post('/webhook', authenticate, async (req, res) => {
     }
 });
 
+// Маршрут для проверки работоспособности сервера
+app.get('/', (req, res) => {
+    res.send('Yookassa Webhook Server is running.');
+});
+
 // Запуск сервера
 app.listen(port, () => {
-    console.log(`Сервер запущен на порту ${port}`);
+    console.log(`Server is running on port ${port}`);
 });
