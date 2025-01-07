@@ -1,120 +1,101 @@
-// server.js
-
-require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const QRCode = require('qrcode');
-const crypto = require('crypto');
+require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 3000;
 
-// Middleware для парсинга JSON
+// Middleware для обработки JSON
 app.use(bodyParser.json());
 
-// Проверка, что все необходимые переменные окружения установлены
-if (!process.env.YKASSA_SECRET_KEY || !process.env.EMAIL_SERVICE || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.error('Ошибка: Не все переменные окружения установлены.');
-    process.exit(1);
-}
+// Проверка API ключа
+const authenticate = (req, res, next) => {
+    const apiKey = req.headers['x-api-key'];
+    if (apiKey && apiKey === process.env.API_KEY) {
+        next();
+    } else {
+        res.status(403).send({ message: 'Forbidden' });
+    }
+};
 
-// Настройка транспорта для nodemailer
+// Настройка почтового транспортера
 const transporter = nodemailer.createTransport({
-    service: process.env.EMAIL_SERVICE, // Например, 'Gmail'
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: false, // true для 465 порта, false для других
     auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-    },
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+    }
 });
 
-// Маршрут для обработки вебхуков от ЮKассы
-app.post('/webhook', async (req, res) => {
-    console.log(Получен вебхук: ${JSON.stringify(req.body)});
+// Обработка webhook от YooKassa
+app.post('/webhook', authenticate, async (req, res) => {
+    const event = req.body;
 
-    const signature = req.headers['x-api-signature-sha256'];
-    const body = JSON.stringify(req.body);
+    // Проверка события. Здесь предполагается, что вы хотите обрабатывать успешные оплаты
+    if (event.event && event.event === 'payment.succeeded') {
+        const payment = event.object;
+        const amount = payment.amount.value;
+        const description = payment.description;
+        const receipt = payment.receipt; // Информация о чеке
+        const email = payment.metadata.email; // Предполагается, что email передается в metadata
 
-    // Верификация подписи вебхука
-    const hmac = crypto.createHmac('sha256', process.env.YKASSA_SECRET_KEY);
-    hmac.update(body);
-    const digest = hmac.digest('hex');
-
-    if (digest !== signature) {
-        console.warn(Не удалось верифицировать вебхук. Ожидалось: ${digest}, Получено: ${signature});
-        return res.status(400).send('Invalid signature');
-    }
-
-    const event = req.body.event;
-    const object = req.body.object;
-
-    console.log(Обработка события: ${event});
-
-    if (event === 'payment.succeeded') {
-        const payment = object;
-        const email = payment.email || payment.account.id; // Получение email пользователя
-        const description = payment.description; // Описание платежа
-        const sum = payment.amount.value / 100; // Сумма платежа
-
-        console.log(Платеж на сумму: ${sum} руб. от: ${email});
-        console.log(Описание платежа: ${description});
-
-        // Здесь вы можете парсить описание платежа, чтобы получить информацию о билетах
-        let ticketInfo;
-        try {
-            ticketInfo = JSON.parse(description);
-        } catch (e) {
-            console.error('Ошибка парсинга описания платежа:', e);
-            return res.status(400).send('Invalid description format');
-        }
-
-        // Генерация QR-кода
-        const qrData = JSON.stringify(ticketInfo);
+        // Генерация QR-кода с информацией о билете
+        const qrData = `
+            Имя: ${payment.metadata.name} ${payment.metadata.surname}
+            День: ${payment.metadata.day}
+            Время: ${payment.metadata.time}
+            Тип билета: ${payment.metadata.ticketType}
+            Количество: ${payment.metadata.quantity}
+            Цена: ${amount} руб.
+        `;
         let qrCodeImage;
         try {
             qrCodeImage = await QRCode.toDataURL(qrData);
-        } catch (e) {
-            console.error('Ошибка генерации QR-кода:', e);
-            return res.status(500).send('QR code generation failed');
+        } catch (err) {
+            console.error('Ошибка при генерации QR-кода:', err);
+            return res.status(500).send({ message: 'Error generating QR code' });
         }
 
-        // Отправка письма
+        // Отправка письма пользователю
         const mailOptions = {
-            from: process.env.EMAIL_USER,
+            from: `"Ваше Название" <${process.env.SMTP_USER}>`,
             to: email,
-            subject: 'Ваши билеты',
-            html: 
-                <p>Спасибо за покупку билетов!</p>
-                <p>Ваши билеты:</p>
+            subject: 'Ваши билеты на каток',
+            html: `
+                <h3>Спасибо за покупку билетов!</h3>
+                <p>Вот ваши билеты:</p>
+                <p><img src="${qrCodeImage}" alt="QR Code" /></p>
+                <p>Детали покупки:</p>
                 <ul>
-                    ${ticketInfo.tickets.map(ticket => <li>${ticket}</li>).join('')}
+                    <li>Имя: ${payment.metadata.name} ${payment.metadata.surname}</li>
+                    <li>День: ${payment.metadata.day}</li>
+                    <li>Время: ${payment.metadata.time}</li>
+                    <li>Тип билета: ${payment.metadata.ticketType === 'regular' ? 'Билет на каток' : 'Льготный'}</li>
+                    <li>Количество: ${payment.metadata.quantity}</li>
+                    <li>Цена: ${amount} руб.</li>
                 </ul>
-                <p>Ваш QR-код:</p>
-                <img src="${qrCodeImage}" alt="QR Code" />
-            ,
+            `
         };
 
         try {
             await transporter.sendMail(mailOptions);
-            console.log(Письмо отправлено на ${email});
-            res.status(200).send('OK');
-        } catch (e) {
-            console.error('Ошибка отправки письма:', e);
-            res.status(500).send('Email sending failed');
+            console.log(`Письмо отправлено на ${email}`);
+        } catch (err) {
+            console.error('Ошибка при отправке письма:', err);
+            return res.status(500).send({ message: 'Error sending email' });
         }
-    } else {
-        // Обработка других событий, если необходимо
-        console.log(Событие не требуется обработки: ${event});
-        res.status(200).send('Event ignored');
-    }
-});
 
-// Маршрут для проверки работоспособности сервера
-app.get('/', (req, res) => {
-    res.send('Yookassa Webhook Server is running.');
+        res.status(200).send({ message: 'Webhook processed' });
+    } else {
+        res.status(400).send({ message: 'Unsupported event' });
+    }
 });
 
 // Запуск сервера
 app.listen(port, () => {
-    console.log(Server is running on port ${port});
+    console.log(`Сервер запущен на порту ${port}`);
 });
