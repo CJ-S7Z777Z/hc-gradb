@@ -2,7 +2,6 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 const QRCode = require('qrcode');
-const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -15,14 +14,14 @@ app.use(bodyParser.json());
 app.use((req, res, next) => {
     console.log(`Получен запрос: ${req.method} ${req.url}`);
     console.log('Заголовки:', req.headers);
-    console.log('Тело запроса:', req.body);
+    console.log('Тело запроса:', JSON.stringify(req.body, null, 2));
     next();
 });
 
 // Проверка API ключа
 const authenticate = (req, res, next) => {
     const apiKey = req.headers['x-api-key'];
-    if (apiKey && apiKey === process.env.API_KEY) {
+    if (apiKey && apiKey === process.env.API_KEY.trim()) {
         next();
     } else {
         console.log('Несовпадение API ключа');
@@ -32,12 +31,12 @@ const authenticate = (req, res, next) => {
 
 // Настройка почтового транспортера
 const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
+    host: process.env.SMTP_HOST.trim(),
     port: parseInt(process.env.SMTP_PORT, 10),
-    secure: false, // true для 465 порта, false для других
+    secure: process.env.SMTP_PORT.trim() === '465', // true для 465 порта, false для других
     auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
+        user: process.env.SMTP_USER.trim(),
+        pass: process.env.SMTP_PASS.trim()
     }
 });
 
@@ -62,7 +61,19 @@ app.post('/webhook', authenticate, async (req, res) => {
             const payment = event.object;
             const amount = payment.amount.value;
             const description = payment.description;
-            const email = payment.metadata && payment.metadata.email;
+            let metadata = {};
+
+            // Попытка извлечения данных из description
+            if (description) {
+                try {
+                    metadata = JSON.parse(description);
+                    console.log('Извлечены metadata:', metadata);
+                } catch (error) {
+                    console.error('Ошибка парсинга description:', error);
+                }
+            }
+
+            const email = metadata.email;
 
             if (!email) {
                 console.error('Email не найден в metadata');
@@ -71,11 +82,11 @@ app.post('/webhook', authenticate, async (req, res) => {
 
             // Генерация QR-кода с информацией о билете
             const qrData = `
-                Имя: ${payment.metadata.name} ${payment.metadata.surname}
-                День: ${payment.metadata.day}
-                Время: ${payment.metadata.time}
-                Тип билета: ${payment.metadata.ticketType}
-                Количество: ${payment.metadata.quantity}
+                Имя: ${metadata.name} ${metadata.surname}
+                День: ${metadata.day}
+                Время: ${metadata.time}
+                Тип билета: ${metadata.ticketType}
+                Количество: ${metadata.quantity}
                 Цена: ${amount} руб.
             `;
             let qrCodeImage;
@@ -89,7 +100,7 @@ app.post('/webhook', authenticate, async (req, res) => {
 
             // Отправка письма пользователю
             const mailOptions = {
-                from: `"Ваше Название" <${process.env.SMTP_USER}>`,
+                from: `"Ваше Название" <${process.env.SMTP_USER.trim()}>`,
                 to: email,
                 subject: 'Ваши билеты на каток',
                 html: `
@@ -98,11 +109,11 @@ app.post('/webhook', authenticate, async (req, res) => {
                     <p><img src="${qrCodeImage}" alt="QR Code" /></p>
                     <p>Детали покупки:</p>
                     <ul>
-                        <li>Имя: ${payment.metadata.name} ${payment.metadata.surname}</li>
-                        <li>День: ${payment.metadata.day}</li>
-                        <li>Время: ${payment.metadata.time}</li>
-                        <li>Тип билета: ${payment.metadata.ticketType === 'regular' ? 'Билет на каток' : 'Льготный'}</li>
-                        <li>Количество: ${payment.metadata.quantity}</li>
+                        <li>Имя: ${metadata.name} ${metadata.surname}</li>
+                        <li>День: ${metadata.day}</li>
+                        <li>Время: ${metadata.time}</li>
+                        <li>Тип билета: ${metadata.ticketType === 'regular' ? 'Билет на каток' : 'Льготный'}</li>
+                        <li>Количество: ${metadata.quantity}</li>
                         <li>Цена: ${amount} руб.</li>
                     </ul>
                 `
