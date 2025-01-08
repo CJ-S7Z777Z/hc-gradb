@@ -81,7 +81,7 @@ app.post('/webhook', async (req, res) => {
 
         // Отправка письма пользователю
         const mailOptions = {
-            from: `Ваше Название <${process.env.SMTP_USER}>`,
+            from: `HC-GRAD (Билеты) <${process.env.SMTP_USER}>`,
             to: email,
             subject: 'Ваши билеты на каток',
             html: `
