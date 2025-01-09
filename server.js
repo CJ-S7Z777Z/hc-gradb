@@ -37,31 +37,25 @@ const verifyYooKassaSignature = (req) => {
     return digest === signature;
 };
 
-// Обработка webhook от YooKassa
+// Обработка webhook от YooKassa с проверкой API-ключа из URL
 app.post('/webhook', async (req, res) => {
     const apiKey = req.query.api_key;
-    console.log('Received webhook with API key:', apiKey);
 
     // Проверка наличия и валидности API-ключа
-    if (!apiKey || apiKey !== process.env.WEBHOOK_YOOKASSA_API_KEY) {
+    if (!apiKey || apiKey !== process.env.WEBHOOK_API_KEY) {
         console.warn('Неверный или отсутствующий API-ключ при получении вебхука.');
         return res.status(403).send('Forbidden');
     }
 
-    console.log('API key valid. Processing webhook.');
-
-    // Временно отключаем проверку подписи для тестирования
-    /*
+    // Опционально: Верификация подписи вебхука
     if (process.env.YKASSA_SECRET_KEY) { // Проверьте, задан ли секретный ключ
         if (!verifyYooKassaSignature(req)) {
             console.warn('Не удалось верифицировать вебхук от YooKassa.');
             return res.status(400).send('Invalid signature');
         }
     }
-    */
 
     const event = req.body;
-    console.log('Event received:', JSON.stringify(event, null, 2));
 
     // Проверка события: обрабатываем только успешные платежи
     if (event.event && event.event === 'payment.succeeded') {
@@ -88,7 +82,6 @@ app.post('/webhook', async (req, res) => {
         let qrCodeImage;
         try {
             qrCodeImage = await QRCode.toDataURL(qrData);
-            console.log('QR-код сгенерирован.');
         } catch (err) {
             console.error('Ошибка при генерации QR-кода:', err);
             return res.status(500).send({ message: 'Error generating QR code' });
@@ -125,14 +118,13 @@ app.post('/webhook', async (req, res) => {
 
         res.status(200).send({ message: 'Webhook processed' });
     } else {
-        console.warn('Unsupported event:', event.event);
         res.status(400).send({ message: 'Unsupported event' });
     }
 });
 
 // Маршрут для проверки работоспособности сервера
 app.get('/', (req, res) => {
-    res.send('YooKassa Webhook Server is running.');
+    res.send('Yookassa Webhook Server is running.');
 });
 
 // Запуск сервера
