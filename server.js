@@ -1,3 +1,4 @@
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
@@ -42,85 +43,93 @@ const verifyYooKassaSignature = (req) => {
 
 // Обработка webhook от YooKassa
 app.post('/webhook', async (req, res) => {
-    console.log('Получен вебхук:', req.body);
+    console.log('--- Получен вебхук ---');
+    console.log('Заголовки:', req.headers);
+    console.log('Тело запроса:', req.body);
 
-    // Верификация подписи вебхука
-    if (process.env.YKASSA_SECRET_KEY) {
-        if (!verifyYooKassaSignature(req)) {
-            console.warn('Не удалось верифицировать вебхук от YooKassa.');
-            return res.status(400).send('Invalid signature');
-        }
-        console.log('Верификация подписи прошла успешно.');
-    }
-
-    const event = req.body;
-
-    // Проверка события: обрабатываем только успешные платежи
-    if (event.event && event.event === 'payment.succeeded') {
-        console.log('Обработка события payment.succeeded');
-        const payment = event.object;
-        const amount = payment.amount.value;
-        const description = payment.description;
-        const email = (payment.metadata && payment.metadata.email) || null;
-
-        if (!email) {
-            console.error('Email отсутствует в metadata:', payment.metadata);
-            return res.status(400).send({ message: 'Email missing in metadata' });
+    try {
+        // Верификация подписи вебхука
+        if (process.env.YKASSA_SECRET_KEY) {
+            if (!verifyYooKassaSignature(req)) {
+                console.warn('Не удалось верифицировать вебхук от YooKassa.');
+                return res.status(400).send('Invalid signature');
+            }
+            console.log('Верификация подписи прошла успешно.');
         }
 
-        // Генерация QR-кода с информацией о билете
-        const qrData = `
-            Имя: ${payment.metadata.name} ${payment.metadata.surname}
-            День: ${payment.metadata.day}
-            Время: ${payment.metadata.time}
-            Тип билета: ${payment.metadata.ticketType}
-            Количество: ${payment.metadata.quantity}
-            Цена: ${amount} руб.
-        `;
-        console.log('Данные для QR-кода:', qrData);
+        const event = req.body;
 
-        let qrCodeImage;
-        try {
-            qrCodeImage = await QRCode.toDataURL(qrData);
-            console.log('QR-код успешно сгенерирован.');
-        } catch (err) {
-            console.error('Ошибка при генерации QR-кода:', err);
-            return res.status(500).send({ message: 'Error generating QR code' });
+        // Проверка события: обрабатываем только успешные платежи
+        if (event.event && event.event === 'payment.succeeded') {
+            console.log('Обработка события payment.succeeded');
+            const payment = event.object;
+            const amount = payment.amount.value;
+            const description = payment.description;
+            const email = (payment.metadata && payment.metadata.email) || null;
+
+            if (!email) {
+                console.error('Email отсутствует в metadata:', payment.metadata);
+                return res.status(400).send({ message: 'Email missing in metadata' });
+            }
+
+            // Генерация QR-кода с информацией о билете
+            const qrData = `
+                Имя: ${payment.metadata.name} ${payment.metadata.surname}
+                День: ${payment.metadata.day}
+                Время: ${payment.metadata.time}
+                Тип билета: ${payment.metadata.ticketType}
+                Количество: ${payment.metadata.quantity}
+                Цена: ${amount} руб.
+            `;
+            console.log('Данные для QR-кода:', qrData);
+
+            let qrCodeImage;
+            try {
+                qrCodeImage = await QRCode.toDataURL(qrData);
+                console.log('QR-код успешно сгенерирован.');
+            } catch (err) {
+                console.error('Ошибка при генерации QR-кода:', err);
+                return res.status(500).send({ message: 'Error generating QR code' });
+            }
+
+            // Отправка письма пользователю
+            const mailOptions = {
+                from: `HC-GRAD (Билеты) <${process.env.SMTP_USER}>`,
+                to: email,
+                subject: 'Ваши билеты на каток',
+                html: `
+                    <h3>Спасибо за покупку билетов!</h3>
+                    <p>Вот ваши билеты:</p>
+                    <p><img src="${qrCodeImage}" alt="QR Code" /></p>
+                    <p>Детали покупки:</p>
+                    <ul>
+                        <li>Имя: ${payment.metadata.name} ${payment.metadata.surname}</li>
+                        <li>День: ${payment.metadata.day}</li>
+                        <li>Время: ${payment.metadata.time}</li>
+                        <li>Тип билета: ${payment.metadata.ticketType === 'regular' ? 'Билет на каток' : 'Льготный'}</li>
+                        <li>Количество: ${payment.metadata.quantity}</li>
+                        <li>Цена: ${amount} руб.</li>
+                    </ul>
+                `
+            };
+
+            try {
+                console.log(`Попытка отправки письма на ${email}`);
+                const info = await transporter.sendMail(mailOptions);
+                console.log(`Письмо успешно отправлено на ${email}: ${info.response}`);
+            } catch (err) {
+                console.error('Ошибка при отправке письма:', err);
+                return res.status(500).send({ message: 'Error sending email' });
+            }
+
+            res.status(200).send({ message: 'Webhook processed' });
+        } else {
+            console.log('Не поддерживаемое событие:', event.event);
+            res.status(400).send({ message: 'Unsupported event' });
         }
-
-        // Отправка письма пользователю
-        const mailOptions = {
-            from: `HC-GRAD (Билеты) <${process.env.SMTP_USER}>`,
-            to: email,
-            subject: 'Ваши билеты на каток',
-            html: `
-                <h3>Спасибо за покупку билетов!</h3>
-                <p>Вот ваши билеты:</p>
-                <p><img src="${qrCodeImage}" alt="QR Code" /></p>
-                <p>Детали покупки:</p>
-                <ul>
-                    <li>Имя: ${payment.metadata.name} ${payment.metadata.surname}</li>
-                    <li>День: ${payment.metadata.day}</li>
-                    <li>Время: ${payment.metadata.time}</li>
-                    <li>Тип билета: ${payment.metadata.ticketType === 'regular' ? 'Билет на каток' : 'Льготный'}</li>
-                    <li>Количество: ${payment.metadata.quantity}</li>
-                    <li>Цена: ${amount} руб.</li>
-                </ul>
-            `
-        };
-
-        try {
-            await transporter.sendMail(mailOptions);
-            console.log(`Письмо успешно отправлено на ${email}`);
-        } catch (err) {
-            console.error('Ошибка при отправке письма:', err);
-            return res.status(500).send({ message: 'Error sending email' });
-        }
-
-        res.status(200).send({ message: 'Webhook processed' });
-    } else {
-        console.log('Не поддерживаемое событие:', event.event);
-        res.status(400).send({ message: 'Unsupported event' });
+    } catch (error) {
+        console.error('Неожиданная ошибка при обработке вебхука:', error);
+        res.status(500).send({ message: 'Internal Server Error' });
     }
 });
 
