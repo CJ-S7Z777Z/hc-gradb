@@ -37,9 +37,17 @@ const verifyYooKassaSignature = (req) => {
     return digest === signature;
 };
 
-// Обработка webhook от YooKassa
+// Обработка webhook от YooKassa с проверкой API-ключа из URL
 app.post('/webhook', async (req, res) => {
-    // Верификация подписи вебхука
+    const apiKey = req.query.api_key;
+
+    // Проверка наличия и валидности API-ключа
+    if (!apiKey || apiKey !== process.env.WEBHOOK_API_KEY) {
+        console.warn('Неверный или отсутствующий API-ключ при получении вебхука.');
+        return res.status(403).send('Forbidden');
+    }
+
+    // Опционально: Верификация подписи вебхука
     if (process.env.YKASSA_SECRET_KEY) { // Проверьте, задан ли секретный ключ
         if (!verifyYooKassaSignature(req)) {
             console.warn('Не удалось верифицировать вебхук от YooKassa.');
@@ -123,5 +131,3 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
 });
-
-
