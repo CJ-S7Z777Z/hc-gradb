@@ -98,12 +98,12 @@ app.post('/webhook', async (req, res) => {
                 <p><img src="${qrCodeImage}" alt="QR Code" /></p>
                 <p>Детали покупки:</p>
                 <ul>
-                    <li>Имя: ${payment.metadata.name} ${payment.metadata.surname}</li>
-                    <li>День: ${payment.metadata.day}</li>
-                    <li>Время: ${payment.metadata.time}</li>
-                    <li>Тип билета: ${payment.metadata.ticketType === 'regular' ? 'Билет на каток' : 'Льготный'}</li>
-                    <li>Количество: ${payment.metadata.quantity}</li>
-                    <li>Цена: ${amount} руб.</li>
+                    <li>Имя: ${formData.name} ${formData.surname}</li>
+                    <li>День: ${formData.day}</li>
+                    <li>Время: ${sessionTime.start} - ${sessionTime.end}</li>
+                    <li>Тип билета: ${ticketFullName === 'regular' ? 'Билет на каток' : 'Льготный'}</li>
+                    <li>Количество: ${formData.quantity}</li>
+                    <li>Цена: ${formData.totalPrice} руб.</li>
                 </ul>
             `
         };
