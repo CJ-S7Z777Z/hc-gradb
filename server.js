@@ -11,19 +11,20 @@ const port = process.env.PORT || 3000;
 // Middleware для обработки JSON
 app.use(bodyParser.json());
 
-// Настройка почтового транспортера
+// Настройка почтового транспортера с отладкой
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT),
-    secure: process.env.SMTP_PORT === '465', // true для 465 порта, false для других
+    secure: process.env.SMTP_PORT === '465',
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
     },
-    // Дополнительные настройки для улучшения надежности соединения
     tls: {
-        rejectUnauthorized: false // Используйте с осторожностью
-    }
+        rejectUnauthorized: false
+    },
+    debug: true, // Включает отладочный режим
+    logger: true // Включает логирование
 });
 
 // Функция для верификации подписи вебхука (если YooKassa поддерживает)
@@ -34,30 +35,36 @@ const verifyYooKassaSignature = (req) => {
     const body = JSON.stringify(req.body);
     hmac.update(body);
     const digest = hmac.digest('hex');
+    console.log('Вычисленная подпись:', digest);
+    console.log('Полученная подпись:', signature);
     return digest === signature;
 };
 
 // Обработка webhook от YooKassa
 app.post('/webhook', async (req, res) => {
+    console.log('Получен вебхук:', req.body);
+
     // Верификация подписи вебхука
-    if (process.env.YKASSA_SECRET_KEY) { // Проверьте, задан ли секретный ключ
+    if (process.env.YKASSA_SECRET_KEY) {
         if (!verifyYooKassaSignature(req)) {
             console.warn('Не удалось верифицировать вебхук от YooKassa.');
             return res.status(400).send('Invalid signature');
         }
+        console.log('Верификация подписи прошла успешно.');
     }
 
     const event = req.body;
 
     // Проверка события: обрабатываем только успешные платежи
     if (event.event && event.event === 'payment.succeeded') {
+        console.log('Обработка события payment.succeeded');
         const payment = event.object;
         const amount = payment.amount.value;
         const description = payment.description;
-        const email = (payment.metadata && payment.metadata.email) || null; // Проверка наличия email
+        const email = (payment.metadata && payment.metadata.email) || null;
 
         if (!email) {
-            console.error('Email отсутствует в metadata.');
+            console.error('Email отсутствует в metadata:', payment.metadata);
             return res.status(400).send({ message: 'Email missing in metadata' });
         }
 
@@ -70,10 +77,12 @@ app.post('/webhook', async (req, res) => {
             Количество: ${payment.metadata.quantity}
             Цена: ${amount} руб.
         `;
+        console.log('Данные для QR-кода:', qrData);
 
         let qrCodeImage;
         try {
             qrCodeImage = await QRCode.toDataURL(qrData);
+            console.log('QR-код успешно сгенерирован.');
         } catch (err) {
             console.error('Ошибка при генерации QR-кода:', err);
             return res.status(500).send({ message: 'Error generating QR code' });
@@ -102,7 +111,7 @@ app.post('/webhook', async (req, res) => {
 
         try {
             await transporter.sendMail(mailOptions);
-            console.log(`Письмо отправлено на ${email}`);
+            console.log(`Письмо успешно отправлено на ${email}`);
         } catch (err) {
             console.error('Ошибка при отправке письма:', err);
             return res.status(500).send({ message: 'Error sending email' });
@@ -110,6 +119,7 @@ app.post('/webhook', async (req, res) => {
 
         res.status(200).send({ message: 'Webhook processed' });
     } else {
+        console.log('Не поддерживаемое событие:', event.event);
         res.status(400).send({ message: 'Unsupported event' });
     }
 });
